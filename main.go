@@ -22,6 +22,9 @@ var core_config string
 
 var watcher *fsnotify.Watcher
 
+type coreToSatellite func(string) string
+type satelliteToCore func(string) string
+
 var CONFIG_source_dirs map[string][]string
 
 func init_log() {
@@ -63,9 +66,9 @@ func main() {
 		return
 	}
 
-	root_dir := os.Args[0]
-	if len(os.Args) > 1 {
-		core_config = os.Args[1]
+	root_dir := os.Args[1]
+	if len(os.Args) > 2 {
+		core_config = os.Args[2]
 	} else {
 		core_config = path.Join(root_dir, core_config_default_filename)
 	}
@@ -80,6 +83,7 @@ func main() {
 	scanner.Split(bufio.ScanLines)
 
 	CONFIG_source_dirs := make(map[string][]string)
+
 	curr_dir := ""
 	for scanner.Scan() {
 		text := scanner.Text()
@@ -89,9 +93,9 @@ func main() {
 		} else {
 			CONFIG_source_dirs[curr_dir] = append(CONFIG_source_dirs[curr_dir], text)
 		}
-
-		fmt.Printf("%s dir transformation: %s", curr_dir, text)
 	}
+
+	log.Printf("Hivemind spawning in %s; reading %s\n\n", root_dir, core_config)
 
 	// creates a new file watcher
 	watcher, _ = fsnotify.NewWatcher()
@@ -99,7 +103,7 @@ func main() {
 
 	// starting at the root of the project, walk each file/directory searching for
 	// directories
-	if err := filepath.Walk("/Users/skdomino/Desktop/test", watchDir); err != nil {
+	if err := filepath.Walk(root_dir, watchDir); err != nil {
 		fmt.Println("ERROR", err)
 	}
 
