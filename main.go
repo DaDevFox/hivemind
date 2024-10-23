@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
-	log "github.com/sirupsen/logrus"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -17,6 +21,8 @@ var root_dir string
 var core_config string
 
 var watcher *fsnotify.Watcher
+
+var CONFIG_source_dirs map[string][]string
 
 func init_log() {
 	// Log as JSON instead of the default ASCII formatter.
@@ -30,7 +36,8 @@ func init_log() {
 	log.SetLevel(log.WarnLevel)
 }
 
-func copy() {
+func copy(source os.File, destination os.File) error {
+	BUFFERSIZE := 256
 	buf := make([]byte, BUFFERSIZE)
 	for {
 		n, err := source.Read(buf)
@@ -45,6 +52,8 @@ func copy() {
 			return err
 		}
 	}
+
+	return nil
 }
 
 // main
@@ -56,14 +65,32 @@ func main() {
 
 	root_dir := os.Args[0]
 	if len(os.Args) > 1 {
-		core_config := os.Args[1]
+		core_config = os.Args[1]
 	} else {
-		core_config := path.Join(root_dir, core_config_default_filename)
+		core_config = path.Join(root_dir, core_config_default_filename)
 	}
 
 	core_config_stream, err := os.Open(core_config)
 	if err != nil {
 		log.Fatal(err)
+	}
+	defer core_config_stream.Close()
+
+	scanner := bufio.NewScanner(core_config_stream)
+	scanner.Split(bufio.ScanLines)
+
+	CONFIG_source_dirs := make(map[string][]string)
+	curr_dir := ""
+	for scanner.Scan() {
+		text := scanner.Text()
+		if curr_dir == "" || !strings.HasPrefix(text, "\t") {
+			curr_dir = text
+			CONFIG_source_dirs[curr_dir] = make([]string, 0)
+		} else {
+			CONFIG_source_dirs[curr_dir] = append(CONFIG_source_dirs[curr_dir], text)
+		}
+
+		fmt.Printf("%s dir transformation: %s", curr_dir, text)
 	}
 
 	// creates a new file watcher
