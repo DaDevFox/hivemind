@@ -78,11 +78,11 @@ func main() {
 	init_log()
 
 	if len(os.Args) < 1 {
-		fmt.Printf("Provide root_dir [config file]")
+		log.Printf("Provide root_dir [config file]\n")
 		return
 	}
 
-	RootDir = os.Args[1]
+	RootDir, _ = filepath.Abs(os.Args[1])
 	if len(os.Args) > 2 {
 		CoreConfig = os.Args[2]
 	} else {
@@ -161,6 +161,7 @@ func main() {
 	}
 
 	log.Printf("Hivemind spawning in %s; reading %s\n\n", RootDir, CoreConfig)
+	watchdog_init()
 	hashdb_init()
 	interface_init()
 	defer interface_cleanup()

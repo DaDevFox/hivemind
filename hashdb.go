@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/md5"
+	"fmt"
 	"hash"
 	"io"
 	"os"
@@ -40,18 +41,24 @@ func hashdb_diff(path string, update bool) bool {
 		return false
 	}
 
-	hashtable_lock.RLock()
-
-	_, exists := HASHDB_hash_table[path]
-
 	h.Reset()
 	newhash := h.Sum(nil)
-	stored := make([]byte, 0)
-	if exists {
-		stored = HASHDB_hash_table[path]
+
+	hashtable_lock.RLock()
+	_, exists := HASHDB_hash_table[path]
+	if !exists {
+		fmt.Printf("detected new file: %s\n", path)
+		if update {
+			HASHDB_hash_table[path] = newhash
+			hashdb_add_to_filetable(path)
+		}
+		hashtable_lock.RUnlock()
+		return true
 	}
 
+	stored := HASHDB_hash_table[path]
 	hashtable_lock.RUnlock()
+
 	if update {
 		h.Reset()
 
@@ -61,11 +68,7 @@ func hashdb_diff(path string, update bool) bool {
 		hashtable_lock.Unlock()
 	}
 
-	if exists {
-		return !bytes.Equal(newhash, stored)
-	} else {
-		return true
-	}
+	return !bytes.Equal(newhash, stored)
 }
 
 func hashdb_add_to_filetable(path string) {
