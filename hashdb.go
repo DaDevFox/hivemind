@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"crypto/sha256"
+	"crypto/md5"
 	"hash"
 	"io"
 	"os"
@@ -18,7 +18,9 @@ var HASHDB_file_table map[string][]string
 var h hash.Hash
 
 func hashdb_init() {
-	h = sha256.New()
+	h = md5.New()
+	HASHDB_hash_table = make(map[string][]byte)
+	HASHDB_file_table = map[string][]string{}
 }
 
 func hashdb_diff(path string, update bool) bool {

@@ -31,17 +31,28 @@ var CONFIG_SourceDirs map[string][]struct {
 	satelliteToCore
 }
 
-//	func init_log() {
-//		// Log as JSON instead of the default ASCII formatter.
-//		log.SetFormatter(&log.JSONFormatter{})
-//
-//		// Output to stdout instead of the default stderr
-//		// Can be any io.Writer, see below for File example
-//		log.SetOutput(os.Stdout)
-//
-//		// Only log the warning severity or above.
-//		log.SetLevel(log.WarnLevel)
-//	}
+func init_log() {
+	// Log as JSON instead of the default ASCII formatter.
+	log.SetFormatter(&log.JSONFormatter{})
+
+	// Output to stdout instead of the default stderr
+	// Can be any io.Writer, see below for File example
+	f, err := os.OpenFile(
+		"./output.log",
+		os.O_CREATE,
+		0644,
+	)
+
+	if err != nil {
+		fmt.Printf("ERROR INITIALIZING LOGFILE: %s", err)
+		panic(err)
+	}
+	log.SetOutput(f)
+
+	// Only log the warning severity or above.
+	log.SetLevel(log.WarnLevel)
+}
+
 func copy(source os.File, destination os.File) error {
 	BUFFERSIZE := 256
 	buf := make([]byte, BUFFERSIZE)
@@ -64,6 +75,8 @@ func copy(source os.File, destination os.File) error {
 
 // main
 func main() {
+	init_log()
+
 	if len(os.Args) < 1 {
 		fmt.Printf("Provide root_dir [config file]")
 		return
@@ -106,13 +119,15 @@ func main() {
 			r_cts, _ := regexp.Compile(".+->(.+)")
 			r_stc, _ := regexp.Compile("(.+)->.+")
 
-			cts_text := r_cts.FindStringSubmatch(text)[0]
-			stc_text := r_stc.FindStringSubmatch(text)[0]
+			cts_text := strings.Trim(r_cts.FindStringSubmatch(text)[1], " \t")
+			stc_text := strings.Trim(r_stc.FindStringSubmatch(text)[1], " \t")
 
 			var cts coreToSatellite = func(s string) *string {
 				var base string
 				n, err := fmt.Sscanf(s, stc_text, &base)
-				if n < 1 || err != nil {
+				fmt.Printf("s is %s, stc_text is %s\n", s, stc_text)
+				fmt.Printf("n is %d, err is %s\n", n, err)
+				if n < 1 && err != nil {
 					return nil
 				}
 				// FLAG: stack var issues?
@@ -123,7 +138,7 @@ func main() {
 			var stc satelliteToCore = func(s string) *string {
 				var base string
 				n, err := fmt.Sscanf(s, cts_text, &base)
-				if n < 1 || err != nil {
+				if n < 1 && err != nil {
 					return nil
 				}
 				// FLAG: stack var issues?
@@ -139,8 +154,12 @@ func main() {
 	}
 
 	log.Printf("Hivemind spawning in %s; reading %s\n\n", RootDir, CoreConfig)
+	hashdb_init()
 	interface_init()
 	defer interface_cleanup()
+
+	// initial scan
+	scan()
 
 	// (one time update)
 	interface_update()

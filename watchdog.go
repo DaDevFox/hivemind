@@ -107,7 +107,10 @@ func check(path string) error {
 					WorkCache[core_filepath_parent] = append(WorkCache[core_filepath_parent], filepath.Dir(path))
 				}
 			}
+
 		}
+
+		interface_update()
 	}()
 	return nil
 }
