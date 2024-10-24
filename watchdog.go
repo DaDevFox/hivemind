@@ -45,9 +45,9 @@ func SubElem(parent, sub string) (bool, error) {
 }
 
 func check(path string) error {
-	// TODO: hook up to hash db; return file hash changed or is different from other
+	// DONE: hook up to hash db; return file hash changed or is different from other
 	changed := func(file string) bool {
-		return false
+		return hashdb_diff(file, true)
 	}
 
 	go func() {
@@ -91,11 +91,15 @@ func check(path string) error {
 						src:  path,
 					}
 
-					// TODO: from hashdb, find core path location of file with untransformed_filename					core_path_match = ""
-					core_filepath := *untransformed_filename
-					core_filepath_parent := filepath.Base(core_filepath)
+					// DONE: from hashdb, find core path location of file with untransformed_filename					core_path_match = ""
+					// TODO: figure out how to resolve nonunique file names
+					core_filepaths, ok := HASHDB_file_table[*untransformed_filename]
+					if !ok {
+						continue
+					}
+					core_filepath_parent := filepath.Base(core_filepaths[0])
 
-					_, ok := WorkCache[core_dir]
+					_, ok = WorkCache[core_dir]
 					if !ok {
 						WorkCache[core_filepath_parent] = make([]string, 0)
 					}

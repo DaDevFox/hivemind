@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+
 	"github.com/pterm/pterm"
 )
 
@@ -21,7 +23,16 @@ func interface_update() {
 
 	for dir := range CONFIG_SourceDirs {
 		panel := pterm.DefaultBox.WithTitleTopCenter(true).WithTitle(dir)
-		res += panel.Sprint() + "\n"
+		body := ""
+		for connection := range WorkCache {
+			body += connection + "\n"
+		}
+		res += panel.Sprint(body) + "\n"
+	}
+
+	if DEBUG_info {
+		res += pterm.DefaultBox.WithTitleTopCenter(true).WithTitle("hashes").Sprint(json.Marshal(HASHDB_hash_table))
+		res += pterm.DefaultBox.WithTitleTopCenter(true).WithTitle("file table").Sprint(json.Marshal(HASHDB_file_table))
 	}
 
 	area.Update(res)
