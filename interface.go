@@ -4,6 +4,7 @@ import (
 	"github.com/pterm/pterm"
 )
 
+var DEBUG_info bool = true
 var area *pterm.AreaPrinter
 
 func interface_init() {

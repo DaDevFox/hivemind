@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"hash"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,35 +15,35 @@ var HASHDB_hash_table map[string][]byte
 // filename to path(s)
 var HASHDB_file_table map[string][]string
 
-var hash hash.Hash
+var h hash.Hash
 
 func hashdb_init() {
-	hash = sha256.New()
+	h = sha256.New()
 }
 
 func hashdb_diff(path string, update bool) bool {
-	hash.Reset()
+	h.Reset()
 
 	file, err := os.Open(path)
 	if err != nil {
 		return false
 	}
 
-	_, err = io.Copy(hash, file)
+	_, err = io.Copy(h, file)
 	if err != nil {
 		return false
 	}
 
 	_, exists := HASHDB_hash_table[path]
 
-	newhash := hash.Sum(nil)
+	newhash := h.Sum(nil)
 	stored := make([]byte, 0)
 	if exists {
 		stored = HASHDB_hash_table[path]
 	}
 
 	if update {
-		HASHDB_hash_table[path] = hash.Sum(nil)
+		HASHDB_hash_table[path] = h.Sum(nil)
 		filename := filepath.Base(path)
 		_, ok := HASHDB_file_table[filename]
 		if !ok {
@@ -59,19 +60,19 @@ func hashdb_diff(path string, update bool) bool {
 }
 
 func hashdb_update(path string) error {
-	hash.Reset()
+	h.Reset()
 
 	file, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 
-	_, err = io.Copy(hash, file)
+	_, err = io.Copy(h, file)
 	if err != nil {
 		return err
 	}
 
-	HASHDB_hash_table[path] = hash.Sum(nil)
+	HASHDB_hash_table[path] = h.Sum(nil)
 	filename := filepath.Base(path)
 	_, ok := HASHDB_file_table[filename]
 	if !ok {
