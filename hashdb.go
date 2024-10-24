@@ -7,7 +7,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 )
+
+var lock = sync.RWMutex{}
 
 // path to hash
 var HASHDB_hash_table map[string][]byte
@@ -36,6 +39,8 @@ func hashdb_diff(path string, update bool) bool {
 		return false
 	}
 
+	lock.RLock()
+
 	_, exists := HASHDB_hash_table[path]
 
 	newhash := h.Sum(nil)
@@ -44,7 +49,9 @@ func hashdb_diff(path string, update bool) bool {
 		stored = HASHDB_hash_table[path]
 	}
 
+	lock.RUnlock()
 	if update {
+		lock.Lock()
 		HASHDB_hash_table[path] = h.Sum(nil)
 		filename := filepath.Base(path)
 		_, ok := HASHDB_file_table[filename]
@@ -52,6 +59,8 @@ func hashdb_diff(path string, update bool) bool {
 			HASHDB_file_table[filename] = make([]string, 0)
 		}
 		HASHDB_file_table[filename] = append(HASHDB_file_table[filename], path)
+
+		lock.Unlock()
 	}
 
 	if exists {
