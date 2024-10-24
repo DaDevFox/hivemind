@@ -30,7 +30,7 @@ func interface_update() {
 			body += "---REGEX---\n"
 			for _, transition := range CONFIG_SourceDirs[dir] {
 				body += "hello -> " + *transition.coreToSatellite("hello") + "\n"
-				// body += (*transition.satelliteToCore(*transition.coreToSatellite("hello"))) + " <- " + *transition.coreToSatellite("hello") + "\n"
+				body += (*transition.satelliteToCore(*transition.coreToSatellite("hello"))) + " <- " + *transition.coreToSatellite("hello") + "\n"
 
 			}
 

@@ -124,23 +124,30 @@ func main() {
 
 			var cts coreToSatellite = func(s string) *string {
 				var base string
-				n, err := fmt.Sscanf(s, stc_text, &base)
-				fmt.Printf("s is %s, stc_text is %s\n", s, stc_text)
-				fmt.Printf("n is %d, err is %s\n", n, err)
-				if n < 1 && err != nil {
+				replaced_stc_text := strings.ReplaceAll(stc_text, "%s", "(.+)")
+				r_matched_stc_text, _ := regexp.Compile(replaced_stc_text)
+				matches := r_matched_stc_text.FindStringSubmatch(s)
+				if len(matches) < 1 {
 					return nil
 				}
+
 				// FLAG: stack var issues?
+				base = matches[1]
 				res := fmt.Sprintf(cts_text, base)
 				return &res
 			}
 
 			var stc satelliteToCore = func(s string) *string {
 				var base string
-				n, err := fmt.Sscanf(s, cts_text, &base)
-				if n < 1 && err != nil {
+				replaced_cts_text := strings.ReplaceAll(cts_text, "%s", "(.+)")
+				r_matched_cts_text, _ := regexp.Compile(replaced_cts_text)
+				matches := r_matched_cts_text.FindStringSubmatch(s)
+				if len(matches) < 1 {
 					return nil
 				}
+
+				base = matches[1]
+
 				// FLAG: stack var issues?
 				res := fmt.Sprintf(stc_text, base)
 				return &res

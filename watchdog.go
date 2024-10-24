@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +24,10 @@ func scan() {
 	}
 
 	err := filepath.Walk(RootDir, func(path string, fi os.FileInfo, err error) error {
+		f, err := os.Stat(path)
+		if err != nil || f.IsDir() {
+			return err
+		}
 		return check(path)
 	})
 	if err != nil {
@@ -45,12 +50,13 @@ func SubElem(parent, sub string) (bool, error) {
 }
 
 func check(path string) error {
-	// DONE: hook up to hash db; return file hash changed or is different from other
-	changed := func(file string) bool {
-		return hashdb_diff(file, true)
-	}
 
 	go func() {
+		// DONE: hook up to hash db; return file hash changed or is different from other
+		changed := func(file string) bool {
+			return hashdb_diff(file, true)
+		}
+
 		filename := filepath.Base(path)
 		for core_dir, matches := range CONFIG_SourceDirs {
 			outprop, err := SubElem(core_dir, path)
@@ -68,6 +74,7 @@ func check(path string) error {
 						continue
 					}
 
+					fmt.Printf("%s updated!", filename)
 					// representational path stored, NOT actual
 					OutpropQueue <- filepath.Join(filepath.Dir(path), *transformed_filename)
 					// FLAG: on new directory add in core space; check for external matches??
@@ -78,9 +85,13 @@ func check(path string) error {
 						continue
 					}
 
+					// fmt.Println(*untransformed_filename)
+
 					if !changed(path) {
 						continue
 					}
+
+					// fmt.Printf("%s updated!", filename)
 
 					// representational path stored, NOT actual
 					TransferQueue <- struct {
@@ -91,13 +102,18 @@ func check(path string) error {
 						src:  path,
 					}
 
-					// DONE: from hashdb, find core path location of file with untransformed_filename					core_path_match = ""
+					// DONE: from hashdb, find core path location of file with untransformed_filename
 					// TODO: figure out how to resolve nonunique file names
+					hashtable_lock.RLock()
 					core_filepaths, ok := HASHDB_file_table[*untransformed_filename]
+					hashtable_lock.Unlock()
+
 					if !ok {
 						continue
 					}
 					core_filepath_parent := filepath.Base(core_filepaths[0])
+
+					fmt.Println("Adding to workcache")
 
 					_, ok = WorkCache[core_dir]
 					if !ok {
