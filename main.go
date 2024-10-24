@@ -26,10 +26,10 @@ var watcher *fsnotify.Watcher
 type coreToSatellite func(string) string
 type satelliteToCore func(string) string
 
-var CONFIG_SourceDirs map[string](chan struct {
+var CONFIG_SourceDirs map[string][]struct {
 	coreToSatellite
 	satelliteToCore
-})
+}
 
 //	func init_log() {
 //		// Log as JSON instead of the default ASCII formatter.
@@ -84,20 +84,24 @@ func main() {
 
 	scanner := bufio.NewScanner(core_config_stream)
 	scanner.Split(bufio.ScanLines)
-	CONFIG_SourceDirs = make(map[string](chan struct {
+	CONFIG_SourceDirs = make(map[string][]struct {
 		coreToSatellite
 		satelliteToCore
-	}))
+	})
 
 	curr_dir := ""
 	for scanner.Scan() {
 		text := scanner.Text()
-		if curr_dir == "" || !strings.HasPrefix(text, "\t") {
+		if strings.Trim(text, " \t") == "" {
+			break
+		}
+
+		if curr_dir == "" || !(strings.HasPrefix(text, "\t") || strings.HasPrefix(text, "  ")) {
 			curr_dir = text
-			CONFIG_SourceDirs[curr_dir] = make((chan struct {
+			CONFIG_SourceDirs[curr_dir] = make([]struct {
 				coreToSatellite
 				satelliteToCore
-			}), 0)
+			}, 0)
 		} else {
 			r_cts, _ := regexp.Compile(".+->(.+)")
 			r_stc, _ := regexp.Compile("(.+)->.+")
@@ -113,12 +117,11 @@ func main() {
 				return strings.ReplaceAll(stc_text, "%s", s)
 			}
 
-			(CONFIG_SourceDirs[curr_dir]) <- struct {
+			CONFIG_SourceDirs[curr_dir] = append(CONFIG_SourceDirs[curr_dir], struct {
 				coreToSatellite
 				satelliteToCore
-			}{cts, stc}
+			}{cts, stc})
 		}
-
 	}
 
 	log.Printf("Hivemind spawning in %s; reading %s\n\n", RootDir, CoreConfig)
@@ -146,12 +149,14 @@ func main() {
 			// watch for events
 			//
 			case event := <-watcher.Events:
-				fmt.Printf("EVENT! %#v\n", event)
+				// fmt.Printf("EVENT! %#v\n", event)
+				on_change(event)
 				interface_update()
 
 				// watch for errors
 			case err := <-watcher.Errors:
-				fmt.Println("ERROR", err)
+				// TODO: find way to prioritize over pterm
+				log.Warn("ERROR", err)
 			}
 		}
 	}()

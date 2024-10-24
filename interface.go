@@ -1,8 +1,6 @@
 package main
 
 import (
-	"time"
-
 	"github.com/pterm/pterm"
 )
 
@@ -18,17 +16,12 @@ func interface_init() {
 
 func interface_update() {
 	res := ""
+	res += pterm.Info.Sprintfln("Updating\n")
 
 	for dir := range CONFIG_SourceDirs {
 		panel := pterm.DefaultBox.WithTitleTopCenter(true).WithTitle(dir)
-		res += panel.Sprint()
-		res += pterm.Info.Sprintln("test")
-
-		// Pause for a second
-		time.Sleep(time.Second)
+		res += panel.Sprint() + "\n"
 	}
-
-	res += pterm.Info.Sprintfln("Updating")
 
 	area.Update(res)
 }
