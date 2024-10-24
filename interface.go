@@ -4,6 +4,8 @@ import (
 	// "encoding/json"
 
 	// "github.com/davecgh/go-spew/spew"
+	"path/filepath"
+
 	"github.com/pterm/pterm"
 )
 
@@ -32,14 +34,23 @@ func interface_update() {
 				body += "hello -> " + *transition.coreToSatellite("hello") + "\n"
 				body += (*transition.satelliteToCore(*transition.coreToSatellite("hello"))) + " <- " + *transition.coreToSatellite("hello") + "\n"
 			}
-
-			body += "---WORK CACHE---\n"
-			WorkCache_lock.RLock()
-			for connection := range WorkCache {
-				body += connection + "\n"
-			}
-			WorkCache_lock.RUnlock()
+			body += "-----------\n"
 		}
+
+		WorkCache_lock.RLock()
+
+		for core_dir := range WorkCache {
+			body += core_dir + "\n"
+			for _, connection := range WorkCache[core_dir] {
+				relpath, err := filepath.Rel(RootDir, connection)
+				if err != nil {
+					relpath = "ERROR"
+				}
+				body += "\t-->" + relpath + "\n"
+			}
+		}
+		WorkCache_lock.RUnlock()
+
 		res += panel.Sprint(body) + "\n"
 	}
 
@@ -48,7 +59,7 @@ func interface_update() {
 		// res += pterm.DefaultBox.WithTitleTopCenter(true).WithTitle("hashes").Sprint(json.Marshal(HASHDB_hash_table))
 	}
 
-	area.Update(res)
+	// area.Update(res)
 }
 
 func interface_cleanup() {

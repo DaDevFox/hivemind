@@ -129,7 +129,7 @@ func check(path string) error {
 					// for path := range core_filepaths.Items {
 					// }
 
-					core_filepath_parent := filepath.Base(core_filepaths.TopK(1)[0])
+					core_filepath_parent := filepath.Dir(core_filepaths.TopK(1)[0])
 					hashtable_lock.RUnlock()
 
 					TransferQueue <- struct {
@@ -140,10 +140,9 @@ func check(path string) error {
 						src:  path,
 					}
 
-					fmt.Println("Adding to workcache")
-
 					WorkCache_lock.Lock()
-					_, ok = WorkCache[core_dir]
+					fmt.Printf("Adding %s/* <-> %s/* to workcache\n", filepath.Dir(path), core_filepath_parent)
+					_, ok = WorkCache[core_filepath_parent]
 					if !ok {
 						WorkCache[core_filepath_parent] = make([]string, 0)
 					}

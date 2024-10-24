@@ -44,7 +44,7 @@ func hashdb_diff(path string, update bool) bool {
 	h.Reset()
 	newhash := h.Sum(nil)
 
-	hashtable_lock.RLock()
+	hashtable_lock.Lock()
 	_, exists := HASHDB_hash_table[path]
 	if !exists {
 		fmt.Printf("detected new file: %s\n", path)
@@ -52,12 +52,12 @@ func hashdb_diff(path string, update bool) bool {
 			HASHDB_hash_table[path] = newhash
 			hashdb_add_to_filetable(path)
 		}
-		hashtable_lock.RUnlock()
+		hashtable_lock.Unlock()
 		return true
 	}
 
 	stored := HASHDB_hash_table[path]
-	hashtable_lock.RUnlock()
+	hashtable_lock.Unlock()
 
 	if update {
 		h.Reset()
