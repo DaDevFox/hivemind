@@ -123,6 +123,11 @@ func main() {
 	}
 
 	log.Printf("Hivemind spawning in %s; reading %s\n\n", root_dir, core_config)
+	interface_init()
+	defer interface_cleanup()
+
+	// (one time update)
+	interface_update()
 
 	// creates a new file watcher
 	watcher, _ = fsnotify.NewWatcher()
