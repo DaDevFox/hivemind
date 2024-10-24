@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/hashicorp/go-set/v3"
 )
 
 var hashtable_lock = sync.RWMutex{}
@@ -16,14 +18,15 @@ var hashtable_lock = sync.RWMutex{}
 var HASHDB_hash_table map[string][]byte
 
 // filename to path(s)
-var HASHDB_file_table map[string][]string
+var HASHDB_file_table map[string](*set.TreeSet[string])
 
 var h hash.Hash
 
 func hashdb_init() {
 	h = md5.New()
 	HASHDB_hash_table = make(map[string][]byte)
-	HASHDB_file_table = map[string][]string{}
+
+	HASHDB_file_table = make(map[string](*set.TreeSet[string]))
 }
 
 func hashdb_diff(path string, update bool) bool {
@@ -54,13 +57,7 @@ func hashdb_diff(path string, update bool) bool {
 
 		hashtable_lock.Lock()
 		HASHDB_hash_table[path] = newhash
-		filename := filepath.Base(path)
-		_, ok := HASHDB_file_table[filename]
-		if !ok {
-			HASHDB_file_table[filename] = make([]string, 0)
-		}
-		HASHDB_file_table[filename] = append(HASHDB_file_table[filename], path)
-
+		hashdb_add_to_filetable(path)
 		hashtable_lock.Unlock()
 	}
 
@@ -69,6 +66,29 @@ func hashdb_diff(path string, update bool) bool {
 	} else {
 		return true
 	}
+}
+
+func hashdb_add_to_filetable(path string) {
+	filename := filepath.Base(path)
+	_, ok := HASHDB_file_table[filename]
+	if !ok {
+		HASHDB_file_table[filename] = set.NewTreeSet(func(s1, s2 string) int {
+			for core_dir := range CONFIG_SourceDirs {
+				subelem, _ := SubElem(core_dir, s1)
+				if subelem {
+					return 1
+				}
+				subelem, _ = SubElem(core_dir, s2)
+				if subelem {
+					return -1
+				}
+			}
+
+			return 0
+		})
+	}
+	HASHDB_file_table[filename].Insert(path)
+
 }
 
 func hashdb_update(path string) error {
@@ -85,12 +105,6 @@ func hashdb_update(path string) error {
 	}
 
 	HASHDB_hash_table[path] = h.Sum(nil)
-	filename := filepath.Base(path)
-	_, ok := HASHDB_file_table[filename]
-	if !ok {
-		HASHDB_file_table[filename] = make([]string, 0)
-	}
-	HASHDB_file_table[filename] = append(HASHDB_file_table[filename], path)
-
+	hashdb_add_to_filetable(path)
 	return nil
 }
