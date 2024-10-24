@@ -27,8 +27,6 @@ func hashdb_init() {
 }
 
 func hashdb_diff(path string, update bool) bool {
-	h.Reset()
-
 	file, err := os.Open(path)
 	if err != nil {
 		return false
@@ -43,6 +41,7 @@ func hashdb_diff(path string, update bool) bool {
 
 	_, exists := HASHDB_hash_table[path]
 
+	h.Reset()
 	newhash := h.Sum(nil)
 	stored := make([]byte, 0)
 	if exists {
@@ -51,8 +50,10 @@ func hashdb_diff(path string, update bool) bool {
 
 	lock.RUnlock()
 	if update {
+		h.Reset()
+
 		lock.Lock()
-		HASHDB_hash_table[path] = h.Sum(nil)
+		HASHDB_hash_table[path] = newhash
 		filename := filepath.Base(path)
 		_, ok := HASHDB_file_table[filename]
 		if !ok {
