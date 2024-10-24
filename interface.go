@@ -11,23 +11,26 @@ var area *pterm.AreaPrinter
 func interface_init() {
 	// Initialize a new PTerm area with fullscreen and center options
 	// The Start() function returns the created area and an error (ignored here)
-	a, _ := pterm.DefaultArea.WithFullscreen().WithCenter().Start()
+	a, _ := pterm.DefaultArea.WithRemoveWhenDone().Start()
 	area = a
 
 }
 
 func interface_update() {
+	res := ""
 
-	// Loop 5 times to demonstrate dynamic content update
-	// Update the content of the area with the current count
-	for i := 0; i < 5; i++ {
-		// The Sprintf function is used to format the string with the count
-		area.Update(pterm.Sprintf("Current count: %d\nAreas can update their content dynamically!", i))
+	for dir := range CONFIG_SourceDirs {
+		panel := pterm.DefaultBox.WithTitleTopCenter(true).WithTitle(dir)
+		res += panel.Sprint()
+		res += pterm.Info.Sprintln("test")
 
 		// Pause for a second
 		time.Sleep(time.Second)
 	}
 
+	res += pterm.Info.Sprintfln("Updating")
+
+	area.Update(res)
 }
 
 func interface_cleanup() {

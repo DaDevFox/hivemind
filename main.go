@@ -18,31 +18,30 @@ import (
 const core_config_default_filename = "core.hive"
 const satellite_config_default_filename = ".hive"
 
-var root_dir string
-var core_config string
+var RootDir string
+var CoreConfig string
 
 var watcher *fsnotify.Watcher
 
 type coreToSatellite func(string) string
 type satelliteToCore func(string) string
 
-var CONFIG_source_dirs map[string][](chan struct {
+var CONFIG_SourceDirs map[string](chan struct {
 	coreToSatellite
 	satelliteToCore
 })
 
-func init_log() {
-	// Log as JSON instead of the default ASCII formatter.
-	log.SetFormatter(&log.JSONFormatter{})
-
-	// Output to stdout instead of the default stderr
-	// Can be any io.Writer, see below for File example
-	log.SetOutput(os.Stdout)
-
-	// Only log the warning severity or above.
-	log.SetLevel(log.WarnLevel)
-}
-
+//	func init_log() {
+//		// Log as JSON instead of the default ASCII formatter.
+//		log.SetFormatter(&log.JSONFormatter{})
+//
+//		// Output to stdout instead of the default stderr
+//		// Can be any io.Writer, see below for File example
+//		log.SetOutput(os.Stdout)
+//
+//		// Only log the warning severity or above.
+//		log.SetLevel(log.WarnLevel)
+//	}
 func copy(source os.File, destination os.File) error {
 	BUFFERSIZE := 256
 	buf := make([]byte, BUFFERSIZE)
@@ -70,14 +69,14 @@ func main() {
 		return
 	}
 
-	root_dir := os.Args[1]
+	RootDir = os.Args[1]
 	if len(os.Args) > 2 {
-		core_config = os.Args[2]
+		CoreConfig = os.Args[2]
 	} else {
-		core_config = path.Join(root_dir, core_config_default_filename)
+		CoreConfig = path.Join(RootDir, core_config_default_filename)
 	}
 
-	core_config_stream, err := os.Open(core_config)
+	core_config_stream, err := os.Open(CoreConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -85,7 +84,7 @@ func main() {
 
 	scanner := bufio.NewScanner(core_config_stream)
 	scanner.Split(bufio.ScanLines)
-	CONFIG_source_dirs := make(map[string](chan struct {
+	CONFIG_SourceDirs = make(map[string](chan struct {
 		coreToSatellite
 		satelliteToCore
 	}))
@@ -95,7 +94,7 @@ func main() {
 		text := scanner.Text()
 		if curr_dir == "" || !strings.HasPrefix(text, "\t") {
 			curr_dir = text
-			CONFIG_source_dirs[curr_dir] = make((chan struct {
+			CONFIG_SourceDirs[curr_dir] = make((chan struct {
 				coreToSatellite
 				satelliteToCore
 			}), 0)
@@ -114,7 +113,7 @@ func main() {
 				return strings.ReplaceAll(stc_text, "%s", s)
 			}
 
-			(CONFIG_source_dirs[curr_dir]) <- struct {
+			(CONFIG_SourceDirs[curr_dir]) <- struct {
 				coreToSatellite
 				satelliteToCore
 			}{cts, stc}
@@ -122,7 +121,7 @@ func main() {
 
 	}
 
-	log.Printf("Hivemind spawning in %s; reading %s\n\n", root_dir, core_config)
+	log.Printf("Hivemind spawning in %s; reading %s\n\n", RootDir, CoreConfig)
 	interface_init()
 	defer interface_cleanup()
 
@@ -135,7 +134,7 @@ func main() {
 
 	// starting at the root of the project, walk each file/directory searching for
 	// directories
-	if err := filepath.Walk(root_dir, watchDir); err != nil {
+	if err := filepath.Walk(RootDir, watchDir); err != nil {
 		fmt.Println("ERROR", err)
 	}
 
@@ -148,6 +147,7 @@ func main() {
 			//
 			case event := <-watcher.Events:
 				fmt.Printf("EVENT! %#v\n", event)
+				interface_update()
 
 				// watch for errors
 			case err := <-watcher.Errors:
