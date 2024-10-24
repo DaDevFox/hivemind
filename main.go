@@ -23,8 +23,8 @@ var CoreConfig string
 
 var watcher *fsnotify.Watcher
 
-type coreToSatellite func(string) string
-type satelliteToCore func(string) string
+type coreToSatellite func(string) *string
+type satelliteToCore func(string) *string
 
 var CONFIG_SourceDirs map[string][]struct {
 	coreToSatellite
@@ -109,12 +109,26 @@ func main() {
 			cts_text := r_cts.FindStringSubmatch(text)[0]
 			stc_text := r_stc.FindStringSubmatch(text)[0]
 
-			var cts coreToSatellite = func(s string) string {
-				return strings.ReplaceAll(cts_text, "%s", s)
+			var cts coreToSatellite = func(s string) *string {
+				var base string
+				n, err := fmt.Sscanf(s, stc_text, &base)
+				if n < 1 || err != nil {
+					return nil
+				}
+				// FLAG: stack var issues?
+				res := fmt.Sprintf(cts_text, base)
+				return &res
 			}
 
-			var stc satelliteToCore = func(s string) string {
-				return strings.ReplaceAll(stc_text, "%s", s)
+			var stc satelliteToCore = func(s string) *string {
+				var base string
+				n, err := fmt.Sscanf(s, cts_text, &base)
+				if n < 1 || err != nil {
+					return nil
+				}
+				// FLAG: stack var issues?
+				res := fmt.Sprintf(stc_text, base)
+				return &res
 			}
 
 			CONFIG_SourceDirs[curr_dir] = append(CONFIG_SourceDirs[curr_dir], struct {
