@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -25,7 +26,10 @@ var watcher *fsnotify.Watcher
 type coreToSatellite func(string) string
 type satelliteToCore func(string) string
 
-var CONFIG_source_dirs map[string][]string
+var CONFIG_source_dirs map[string][](chan struct {
+	coreToSatellite
+	satelliteToCore
+})
 
 func init_log() {
 	// Log as JSON instead of the default ASCII formatter.
@@ -81,18 +85,41 @@ func main() {
 
 	scanner := bufio.NewScanner(core_config_stream)
 	scanner.Split(bufio.ScanLines)
-
-	CONFIG_source_dirs := make(map[string][]string)
+	CONFIG_source_dirs := make(map[string](chan struct {
+		coreToSatellite
+		satelliteToCore
+	}))
 
 	curr_dir := ""
 	for scanner.Scan() {
 		text := scanner.Text()
 		if curr_dir == "" || !strings.HasPrefix(text, "\t") {
 			curr_dir = text
-			CONFIG_source_dirs[curr_dir] = make([]string, 0)
+			CONFIG_source_dirs[curr_dir] = make((chan struct {
+				coreToSatellite
+				satelliteToCore
+			}), 0)
 		} else {
-			CONFIG_source_dirs[curr_dir] = append(CONFIG_source_dirs[curr_dir], text)
+			r_cts, _ := regexp.Compile(".+->(.+)")
+			r_stc, _ := regexp.Compile("(.+)->.+")
+
+			cts_text := r_cts.FindStringSubmatch(text)[0]
+			stc_text := r_stc.FindStringSubmatch(text)[0]
+
+			var cts coreToSatellite = func(s string) string {
+				return strings.ReplaceAll(cts_text, "%s", s)
+			}
+
+			var stc satelliteToCore = func(s string) string {
+				return strings.ReplaceAll(stc_text, "%s", s)
+			}
+
+			(CONFIG_source_dirs[curr_dir]) <- struct {
+				coreToSatellite
+				satelliteToCore
+			}{cts, stc}
 		}
+
 	}
 
 	log.Printf("Hivemind spawning in %s; reading %s\n\n", root_dir, core_config)
