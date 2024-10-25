@@ -1,10 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"crypto/md5"
+	"encoding/hex"
 	"fmt"
-	"hash"
+	// "hash"
 	"io"
 	"os"
 	"path/filepath"
@@ -17,36 +17,25 @@ var HashTable_lock = sync.RWMutex{}
 var FileTable_lock = sync.RWMutex{}
 
 // path to hash
-var HASHDB_hash_table map[string][]byte
+var HASHDB_hash_table map[string]string
 
 // filename to path(s)
 var HASHDB_file_table map[string](*set.TreeSet[string])
 
-var h hash.Hash
-
 func hashdb_init() {
-	h = md5.New()
-	HASHDB_hash_table = make(map[string][]byte)
-
+	// h = md5.New()
+	HASHDB_hash_table = make(map[string]string)
 	HASHDB_file_table = make(map[string](*set.TreeSet[string]))
 }
 
 func hashdb_diff(path string, update bool) bool {
-	file, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-
-	_, err = io.Copy(h, file)
-	if err != nil {
-		return false
-	}
-
-	h.Reset()
-	newhash := h.Sum(nil)
-
 	HashTable_lock.Lock()
-	_, exists := HASHDB_hash_table[path]
+	stored, exists := HASHDB_hash_table[path]
+	newhash, err := md5sum(path)
+	if err != nil {
+		fmt.Printf("ERR while hashing: %s\n", err)
+	}
+
 	if !exists {
 		fmt.Printf("detected new file: %s\n", path)
 		if update {
@@ -56,12 +45,9 @@ func hashdb_diff(path string, update bool) bool {
 		HashTable_lock.Unlock()
 		return true
 	}
-
-	stored := HASHDB_hash_table[path]
 	HashTable_lock.Unlock()
 
 	if update {
-		h.Reset()
 
 		HashTable_lock.Lock()
 		HASHDB_hash_table[path] = newhash
@@ -69,7 +55,7 @@ func hashdb_diff(path string, update bool) bool {
 		HashTable_lock.Unlock()
 	}
 
-	return !bytes.Equal(newhash, stored)
+	return newhash != stored
 }
 
 func hashdb_add_to_filetable(path string) {
@@ -96,19 +82,25 @@ func hashdb_add_to_filetable(path string) {
 }
 
 func hashdb_update(path string) error {
-	h.Reset()
-
-	file, err := os.Open(path)
+	hash, err := md5sum(path)
 	if err != nil {
 		return err
 	}
-
-	_, err = io.Copy(h, file)
-	if err != nil {
-		return err
-	}
-
-	HASHDB_hash_table[path] = h.Sum(nil)
+	HASHDB_hash_table[path] = hash
 	hashdb_add_to_filetable(path)
 	return nil
+}
+
+func md5sum(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := md5.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }

@@ -30,6 +30,7 @@ var OutpropQueue chan struct {
 }
 
 func watchdog_init() {
+	hashdb_init()
 	TransferQueue = make(chan struct {
 		dest string
 		src  string
@@ -40,6 +41,27 @@ func watchdog_init() {
 	}, BUFFER_SIZE)
 	go transfer_serve()
 	go outprop_serve()
+
+	for core_dir := range CONFIG_SourceDirs {
+		err := filepath.Walk(core_dir, func(path string, fi os.FileInfo, err error) error {
+			f, err := os.Stat(path)
+			if err != nil {
+				return err
+			}
+
+			if f.IsDir() {
+				return nil
+			}
+
+			hashdb_update(path)
+
+			return nil
+		})
+
+		if err != nil {
+			logrus.Fatal(err)
+		}
+	}
 }
 
 func scan() {
@@ -91,6 +113,10 @@ func check(path string) error {
 		return hashdb_diff(file, true)
 	}
 
+	if !changed(path) {
+		return nil
+	}
+
 	filename := filepath.Base(path)
 	for core_dir, matches := range CONFIG_SourceDirs {
 		abs_path, err := filepath.Abs(path)
@@ -110,9 +136,9 @@ func check(path string) error {
 				}
 
 				// TODO: or below with diff relative to ANY satellite mirror
-				if !changed(path) {
-					continue
-				}
+				// if !changed(path) {
+				// 	continue
+				// }
 
 				// representational path stored, NOT actual
 				OutpropQueue <- struct {
@@ -131,9 +157,6 @@ func check(path string) error {
 				}
 
 				fmt.Printf("located %s mapping to %s; checking\n", path, *untransformed_filename)
-				if !changed(path) {
-					continue
-				}
 
 				fmt.Printf("change detected: %s\n", *untransformed_filename)
 
@@ -156,6 +179,7 @@ func check(path string) error {
 				core_filepath_parent := filepath.Dir(core_filepaths.TopK(1)[0])
 				FileTable_lock.Unlock()
 
+				fmt.Printf("adding to transferqueue: %s\n", *untransformed_filename)
 				TransferQueue <- struct {
 					dest string
 					src  string
@@ -191,13 +215,13 @@ func transfer(event struct {
 	dest string
 	src  string
 }) error {
-	// src_file, err := os.Open(event.src)
-	// defer src_file.Close()
-	// if err != nil {
-	// 	return err
-	// }
-
+	fmt.Printf("Transferring %s\n", event.src)
 	// TODO: recovery flag + backup for contents of file prior to overwrite
+	err := copyFileThreadSafe(event.src, event.dest, &file_copy_mutex)
+	if err != nil {
+		fmt.Printf("ERR: %s", err)
+	}
+
 	OutpropQueue <- struct {
 		dest_filename string
 		src           string
@@ -205,20 +229,6 @@ func transfer(event struct {
 		dest_filename: filepath.Base(event.src), // TODO: expand across match patterns for outprop requests
 		src:           event.dest,
 	}
-
-	// dest_file, err := os.Create(event.dest)
-	// defer dest_file.Close()
-	// if err != nil {
-	// 	logrus.Fatal(err)
-	// }
-	//
-	err := copyFileThreadSafe(event.src, event.dest, &file_copy_mutex)
-	if err != nil {
-		fmt.Printf("ERR: %s", err)
-	}
-
-	// n, err := io.Copy(dest_file, src_file)
-	// fmt.Printf("%d bytes copied from %s to %s\n", n, event.src, event.dest)
 
 	return nil
 }
@@ -234,34 +244,18 @@ func outpropogate(event struct {
 	dest_filename string
 	src           string
 }) error {
-	// src, err := os.Open(event.src)
+	fmt.Printf("Outpropogating %s\n", event.dest_filename)
 	parent := filepath.Dir(event.src)
-	// defer src.Close()
-	// if err != nil {
-	// 	fmt.Print(err)
-	// }
-	// fmt.Println("TEST")
-	//
-
 	WorkCache_lock.RLock()
 	for _, mapping := range WorkCache[parent] {
+		fmt.Printf("2; Outpropogating %s\n", event.dest_filename)
 		other_path := filepath.Join(mapping, event.dest_filename)
 		fmt.Println(other_path)
-
-		// dest, err := os.Create(other_path)
-		// defer dest.Close()
-		// if err != nil {
-		// 	return err
-		// }
-		//
-		// n, err := io.Copy(dest, src)
 
 		err := copyFileThreadSafe(event.src, other_path, &file_copy_mutex)
 		if err != nil {
 			fmt.Printf("ERR: %s", err)
 		}
-
-		// fmt.Printf("%d bytes copied from %s to %s\n", n, event.src, other_path)
 	}
 
 	WorkCache_lock.RUnlock()

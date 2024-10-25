@@ -162,7 +162,6 @@ func main() {
 
 	log.Printf("Hivemind spawning in %s; reading %s\n\n", RootDir, CoreConfig)
 	watchdog_init()
-	hashdb_init()
 	interface_init()
 	defer interface_cleanup()
 
