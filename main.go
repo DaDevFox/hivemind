@@ -191,7 +191,7 @@ func main() {
 			//
 			case event := <-watcher.Events:
 				// fmt.Printf("EVENT! %#v\n", event)
-				go on_change(event)
+				go watchdog_process(event)
 				interface_update()
 
 				// watch for errors

@@ -13,7 +13,7 @@ import (
 	"github.com/hashicorp/go-set/v3"
 )
 
-var hashtable_lock = sync.RWMutex{}
+var HashTable_lock = sync.RWMutex{}
 
 // path to hash
 var HASHDB_hash_table map[string][]byte
@@ -44,7 +44,7 @@ func hashdb_diff(path string, update bool) bool {
 	h.Reset()
 	newhash := h.Sum(nil)
 
-	hashtable_lock.Lock()
+	HashTable_lock.Lock()
 	_, exists := HASHDB_hash_table[path]
 	if !exists {
 		fmt.Printf("detected new file: %s\n", path)
@@ -52,20 +52,20 @@ func hashdb_diff(path string, update bool) bool {
 			HASHDB_hash_table[path] = newhash
 			hashdb_add_to_filetable(path)
 		}
-		hashtable_lock.Unlock()
+		HashTable_lock.Unlock()
 		return true
 	}
 
 	stored := HASHDB_hash_table[path]
-	hashtable_lock.Unlock()
+	HashTable_lock.Unlock()
 
 	if update {
 		h.Reset()
 
-		hashtable_lock.Lock()
+		HashTable_lock.Lock()
 		HASHDB_hash_table[path] = newhash
 		hashdb_add_to_filetable(path)
-		hashtable_lock.Unlock()
+		HashTable_lock.Unlock()
 	}
 
 	return !bytes.Equal(newhash, stored)

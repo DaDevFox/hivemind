@@ -12,6 +12,9 @@ import (
 var DEBUG_info bool = true
 var area *pterm.AreaPrinter
 
+var CHECKING_source_dirs []string
+var WORKING_source_dirs []string
+
 func interface_init() {
 	// Initialize a new PTerm area with fullscreen and center options
 	// The Start() function returns the created area and an error (ignored here)
@@ -21,7 +24,7 @@ func interface_init() {
 
 func interface_update() {
 	res := ""
-	res += pterm.Info.Sprintfln("Updating\n")
+	// res += pterm.Info.Sprintfln("Updating\n")
 
 	for dir := range CONFIG_SourceDirs {
 		panel := pterm.DefaultBox.WithTitleTopCenter(true).WithTitle(dir)
