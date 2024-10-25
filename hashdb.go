@@ -14,6 +14,7 @@ import (
 )
 
 var HashTable_lock = sync.RWMutex{}
+var FileTable_lock = sync.RWMutex{}
 
 // path to hash
 var HASHDB_hash_table map[string][]byte

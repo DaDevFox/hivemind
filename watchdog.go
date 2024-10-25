@@ -1,9 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
-	"io"
+	// "io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +11,8 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/sirupsen/logrus"
 )
+
+var file_copy_mutex = sync.Mutex{}
 
 var BUFFER_SIZE = 2048
 
@@ -23,14 +24,22 @@ var TransferQueue chan struct {
 	dest string
 	src  string
 }
-var OutpropQueue chan string
+var OutpropQueue chan struct {
+	dest_filename string
+	src           string
+}
 
 func watchdog_init() {
 	TransferQueue = make(chan struct {
 		dest string
 		src  string
 	}, BUFFER_SIZE)
-	OutpropQueue = make(chan string, BUFFER_SIZE)
+	OutpropQueue = make(chan struct {
+		dest_filename string
+		src           string
+	}, BUFFER_SIZE)
+	go transfer_serve()
+	go outprop_serve()
 }
 
 func scan() {
@@ -40,8 +49,6 @@ func scan() {
 		WorkCache_lock.Unlock()
 	}
 
-	wg := sync.WaitGroup{}
-
 	// perform full transfer/balancing check
 	err := filepath.Walk(RootDir, func(path string, fi os.FileInfo, err error) error {
 		f, err := os.Stat(path)
@@ -50,25 +57,12 @@ func scan() {
 		}
 
 		// TODO: use ignore filter here
-		wg.Add(1)
-		go check(path, &wg)
+		go check(path)
 
 		return err
 	})
 
-	wg.Wait()
-
 	// perform full write/transfer operations
-
-	// propogate into core dirs
-	transfer_serve(&wg)
-
-	wg.Wait()
-
-	// propogate out to satellite dirs
-	outprop_serve(&wg)
-
-	wg.Wait()
 
 	fmt.Println("completed full directory sync")
 
@@ -91,10 +85,7 @@ func SubElem(parent, sub string) (bool, error) {
 	return false, nil
 }
 
-func check(path string, wg *sync.WaitGroup) error {
-	if wg != nil {
-		defer wg.Done()
-	}
+func check(path string) error {
 	// DONE: hook up to hash db; return file hash changed or is different from other
 	changed := func(file string) bool {
 		return hashdb_diff(file, true)
@@ -118,12 +109,19 @@ func check(path string, wg *sync.WaitGroup) error {
 					continue
 				}
 
+				// TODO: or below with diff relative to ANY satellite mirror
 				if !changed(path) {
 					continue
 				}
 
 				// representational path stored, NOT actual
-				OutpropQueue <- filepath.Join(filepath.Dir(path), *transformed_filename)
+				OutpropQueue <- struct {
+					dest_filename string
+					src           string
+				}{
+					dest_filename: *transformed_filename,
+					src:           path,
+				}
 				// FLAG: on new directory add in core space; check for external matches??
 			} else {
 				untransformed_filename := transaction_type.satelliteToCore(filename)
@@ -143,7 +141,7 @@ func check(path string, wg *sync.WaitGroup) error {
 
 				// DONE: from hashdb, find core path location of file with untransformed_filename
 				// TODO: figure out how to resolve nonunique file names
-				HashTable_lock.RLock()
+				FileTable_lock.Lock()
 				core_filepaths, ok := HASHDB_file_table[*untransformed_filename]
 
 				if !ok {
@@ -156,7 +154,7 @@ func check(path string, wg *sync.WaitGroup) error {
 				// }
 
 				core_filepath_parent := filepath.Dir(core_filepaths.TopK(1)[0])
-				HashTable_lock.RUnlock()
+				FileTable_lock.Unlock()
 
 				TransferQueue <- struct {
 					dest string
@@ -186,98 +184,93 @@ func check(path string, wg *sync.WaitGroup) error {
 }
 
 func watchdog_process(event fsnotify.Event) {
-	wg := sync.WaitGroup{}
-
-	// check if file or dir
-	wg.Add(1)
-	go check(event.Name, &wg)
-
-	// wg.Wait()
-	//
-	// transfer_serve(&wg)
-	//
-	// wg.Wait()
-	//
-	// outprop_serve(&wg)
+	go check(event.Name)
 }
 
 func transfer(event struct {
 	dest string
 	src  string
-}, wg *sync.WaitGroup) error {
-	defer wg.Done()
-
-	src_file, err := os.Open(event.src)
-	defer src_file.Close()
-	if err != nil {
-		return err
-	}
+}) error {
+	// src_file, err := os.Open(event.src)
+	// defer src_file.Close()
+	// if err != nil {
+	// 	return err
+	// }
 
 	// TODO: recovery flag + backup for contents of file prior to overwrite
-	_, err = os.Stat(event.dest)
-	if os.IsNotExist(err) {
-		OutpropQueue <- filepath.Base(event.dest)
+	OutpropQueue <- struct {
+		dest_filename string
+		src           string
+	}{
+		dest_filename: filepath.Base(event.src), // TODO: expand across match patterns for outprop requests
+		src:           event.dest,
 	}
 
-	dest_file, err := os.Create(event.dest)
-	defer dest_file.Close()
+	// dest_file, err := os.Create(event.dest)
+	// defer dest_file.Close()
+	// if err != nil {
+	// 	logrus.Fatal(err)
+	// }
+	//
+	err := copyFileThreadSafe(event.src, event.dest, &file_copy_mutex)
 	if err != nil {
-		logrus.Fatal(err)
+		fmt.Printf("ERR: %s", err)
 	}
 
-	n, err := io.Copy(dest_file, src_file)
-	fmt.Printf("%d bytes copied from %s to %s\n", n, event.src, event.dest)
+	// n, err := io.Copy(dest_file, src_file)
+	// fmt.Printf("%d bytes copied from %s to %s\n", n, event.src, event.dest)
 
 	return nil
 }
 
-func transfer_serve(wg *sync.WaitGroup) {
+func transfer_serve() {
 	for s := range TransferQueue {
-		wg.Add(1)
-		go transfer(s, wg)
+		fmt.Printf("serving %s\n", s.dest)
+		go transfer(s)
 	}
 }
 
-func outpropogate(path string, wg *sync.WaitGroup) error {
-	defer wg.Done()
-	parent := filepath.Dir(path)
-	filename := filepath.Base(path)
-
-	src, err := os.Open(path)
-	defer src.Close()
-	if err != nil {
-		return err
-	}
+func outpropogate(event struct {
+	dest_filename string
+	src           string
+}) error {
+	// src, err := os.Open(event.src)
+	parent := filepath.Dir(event.src)
+	// defer src.Close()
+	// if err != nil {
+	// 	fmt.Print(err)
+	// }
+	// fmt.Println("TEST")
+	//
 
 	WorkCache_lock.RLock()
 	for _, mapping := range WorkCache[parent] {
-		other_path := filepath.Join(mapping, filename)
+		other_path := filepath.Join(mapping, event.dest_filename)
+		fmt.Println(other_path)
 
-		HashTable_lock.RLock()
-		other_hash, exists := HASHDB_hash_table[other_path]
-		update := !exists || !bytes.Equal(other_hash, HASHDB_hash_table[path])
+		// dest, err := os.Create(other_path)
+		// defer dest.Close()
+		// if err != nil {
+		// 	return err
+		// }
+		//
+		// n, err := io.Copy(dest, src)
 
-		if update {
-			dest, err := os.Create(other_path)
-			defer dest.Close()
-			if err != nil {
-				return err
-			}
-
-			n, err := io.Copy(dest, src)
-			fmt.Printf("%d bytes copied from %s to %s\n", n, path, other_path)
+		err := copyFileThreadSafe(event.src, other_path, &file_copy_mutex)
+		if err != nil {
+			fmt.Printf("ERR: %s", err)
 		}
-		HashTable_lock.RUnlock()
 
+		// fmt.Printf("%d bytes copied from %s to %s\n", n, event.src, other_path)
 	}
+
 	WorkCache_lock.RUnlock()
 
 	return nil
 }
 
-func outprop_serve(wg *sync.WaitGroup) {
-	for s := range OutpropQueue {
-		wg.Add(1)
-		go outpropogate(s, wg)
+func outprop_serve() {
+	for e := range OutpropQueue {
+		go outpropogate(e)
 	}
 }
