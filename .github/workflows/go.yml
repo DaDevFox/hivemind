@@ -24,7 +24,7 @@ jobs:
       - name: Get Version Number
         id: versionnum
         run: |
-          echo "version=$(cat Version.props | grep -oP '(?<=<Version>).*?(?=</Version>)')" >> $GITHUB_OUTPUT
+          echo "version=$(cat version.txt)" >> $GITHUB_OUTPUT
 
       - name: Concatenate 'v'
         id: versionvnum
