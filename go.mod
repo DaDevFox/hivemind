@@ -5,8 +5,8 @@ go 1.23
 toolchain go1.23.2
 
 require (
-	github.com/davecgh/go-spew v1.1.1
 	github.com/fsnotify/fsnotify v1.7.0
+	github.com/gobwas/glob v0.2.3
 	github.com/hashicorp/go-set/v3 v3.0.0
 	github.com/pterm/pterm v0.12.79
 	github.com/sirupsen/logrus v1.9.3

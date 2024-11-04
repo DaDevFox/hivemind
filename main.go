@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gobwas/glob"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/fsnotify/fsnotify"
@@ -31,16 +32,16 @@ var CONFIG_SourceDirs map[string][]struct {
 	satelliteToCore
 }
 
+var CONFIG_IgnoreGlobs []glob.Glob
+
 func init_log() {
 	// Log as JSON instead of the default ASCII formatter.
 	log.SetFormatter(&log.JSONFormatter{})
 
 	// Output to stdout instead of the default stderr
 	// Can be any io.Writer, see below for File example
-	f, err := os.OpenFile(
+	f, err := os.Create(
 		"./output.log",
-		os.O_CREATE,
-		0644,
 	)
 
 	if err != nil {
@@ -77,7 +78,7 @@ func copy(source os.File, destination os.File) error {
 func main() {
 	init_log()
 
-	if len(os.Args) < 1 {
+	if len(os.Args) <= 1 {
 		log.Printf("Provide root_dir [config file]\n")
 		return
 	}
@@ -97,81 +98,93 @@ func main() {
 
 	scanner := bufio.NewScanner(core_config_stream)
 	scanner.Split(bufio.ScanLines)
+	reading_source_dirs := true
 	CONFIG_SourceDirs = make(map[string][]struct {
 		coreToSatellite
 		satelliteToCore
 	})
 
+	CONFIG_IgnoreGlobs = make([]glob.Glob, 0)
+
 	curr_dir := ""
 	for scanner.Scan() {
 		text := scanner.Text()
 		if strings.Trim(text, " \t") == "" {
-			break
+			continue
+		} else if strings.Trim(text, " \t") == "IGNORE:" {
+			reading_source_dirs = false
 		}
 
-		if curr_dir == "" || !(strings.HasPrefix(text, "\t") || strings.HasPrefix(text, "  ")) {
-			curr_dir = text
-			CONFIG_SourceDirs[curr_dir] = make([]struct {
-				coreToSatellite
-				satelliteToCore
-			}, 0)
+		if reading_source_dirs {
+			if curr_dir == "" || !(strings.HasPrefix(text, "\t") || strings.HasPrefix(text, "  ")) {
+				curr_dir = text
+				CONFIG_SourceDirs[curr_dir] = make([]struct {
+					coreToSatellite
+					satelliteToCore
+				}, 0)
+			} else {
+				r_cts, _ := regexp.Compile(".+->(.+)")
+				r_stc, _ := regexp.Compile("(.+)->.+")
+
+				cts_text := strings.Trim(r_cts.FindStringSubmatch(text)[1], " \t")
+				stc_text := strings.Trim(r_stc.FindStringSubmatch(text)[1], " \t")
+
+				var cts coreToSatellite = func(s string) *string {
+					var base string
+					replaced_stc_text := strings.ReplaceAll(stc_text, "%s", "(.+)")
+					r_matched_stc_text, _ := regexp.Compile(replaced_stc_text)
+					matches := r_matched_stc_text.FindStringSubmatch(s)
+					if len(matches) < 1 {
+						return nil
+					}
+
+					// FLAG: stack var issues?
+					base = matches[1]
+					res := fmt.Sprintf(cts_text, base)
+					return &res
+				}
+
+				var stc satelliteToCore = func(s string) *string {
+					var base string
+					replaced_cts_text := strings.ReplaceAll(cts_text, "%s", "(.+)")
+					r_matched_cts_text, _ := regexp.Compile(replaced_cts_text)
+					matches := r_matched_cts_text.FindStringSubmatch(s)
+					if len(matches) < 1 {
+						return nil
+					}
+
+					base = matches[1]
+
+					// FLAG: stack var issues?
+					res := fmt.Sprintf(stc_text, base)
+					return &res
+				}
+
+				CONFIG_SourceDirs[curr_dir] = append(CONFIG_SourceDirs[curr_dir], struct {
+					coreToSatellite
+					satelliteToCore
+				}{cts, stc})
+			}
 		} else {
-			r_cts, _ := regexp.Compile(".+->(.+)")
-			r_stc, _ := regexp.Compile("(.+)->.+")
-
-			cts_text := strings.Trim(r_cts.FindStringSubmatch(text)[1], " \t")
-			stc_text := strings.Trim(r_stc.FindStringSubmatch(text)[1], " \t")
-
-			var cts coreToSatellite = func(s string) *string {
-				var base string
-				replaced_stc_text := strings.ReplaceAll(stc_text, "%s", "(.+)")
-				r_matched_stc_text, _ := regexp.Compile(replaced_stc_text)
-				matches := r_matched_stc_text.FindStringSubmatch(s)
-				if len(matches) < 1 {
-					return nil
-				}
-
-				// FLAG: stack var issues?
-				base = matches[1]
-				res := fmt.Sprintf(cts_text, base)
-				return &res
-			}
-
-			var stc satelliteToCore = func(s string) *string {
-				var base string
-				replaced_cts_text := strings.ReplaceAll(cts_text, "%s", "(.+)")
-				r_matched_cts_text, _ := regexp.Compile(replaced_cts_text)
-				matches := r_matched_cts_text.FindStringSubmatch(s)
-				if len(matches) < 1 {
-					return nil
-				}
-
-				base = matches[1]
-
-				// FLAG: stack var issues?
-				res := fmt.Sprintf(stc_text, base)
-				return &res
-			}
-
-			CONFIG_SourceDirs[curr_dir] = append(CONFIG_SourceDirs[curr_dir], struct {
-				coreToSatellite
-				satelliteToCore
-			}{cts, stc})
+			CONFIG_IgnoreGlobs = append(CONFIG_IgnoreGlobs, glob.MustCompile(strings.Trim(text, "\t ")))
 		}
 	}
 
-	log.Printf("Hivemind spawning in %s; reading %s\n\n", RootDir, CoreConfig)
+	fmt.Printf("Hivemind spawning in %s; reading %s\n\n", RootDir, CoreConfig)
 	watchdog_init()
 	interface_init()
 	defer interface_cleanup()
+	fmt.Printf("Initialized; performing initial scan\n")
 
 	// initial scan
 	scan()
+	fmt.Printf("Initial scan complete\n")
 
 	// (one time update)
 	interface_update()
 
 	// creates a new file watcher
+	fmt.Printf("Watching root directory (%s)", RootDir)
 	watcher, _ = fsnotify.NewWatcher()
 	defer watcher.Close()
 
@@ -202,6 +215,8 @@ func main() {
 	}()
 
 	<-done
+
+	fmt.Println("Done channel received; ending program")
 }
 
 // watchDir gets run as a walk func, searching for directories to add watchers to
