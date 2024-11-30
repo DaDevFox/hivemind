@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/gobwas/glob"
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -34,24 +34,23 @@ var CONFIG_SourceDirs map[string][]struct {
 
 var CONFIG_IgnoreGlobs []glob.Glob
 
-func init_log() {
-	// Log as JSON instead of the default ASCII formatter.
-	log.SetFormatter(&log.JSONFormatter{})
+var log = logrus.New()
 
-	// Output to stdout instead of the default stderr
-	// Can be any io.Writer, see below for File example
-	f, err := os.Create(
-		"./output.log",
-	)
+func init_log() {
+	fmt.Println("Initializing")
+
+	// Log as JSON instead of the default ASCII formatter.
+	log.SetFormatter(&logrus.TextFormatter{})
+	// Only log the given severity or above.
+	log.SetLevel(logrus.DebugLevel)
+
+	f, err := os.OpenFile("output.log", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0666)
 
 	if err != nil {
 		fmt.Printf("ERROR INITIALIZING LOGFILE: %s", err)
 		panic(err)
 	}
 	log.SetOutput(f)
-
-	// Only log the warning severity or above.
-	log.SetLevel(log.WarnLevel)
 }
 
 func copy(source os.File, destination os.File) error {
@@ -79,7 +78,7 @@ func main() {
 	init_log()
 
 	if len(os.Args) <= 1 {
-		log.Printf("Provide root_dir [config file]\n")
+		fmt.Printf("Provide root_dir [config file]\n")
 		return
 	}
 
@@ -166,6 +165,7 @@ func main() {
 				}{cts, stc})
 			}
 		} else {
+			log.Info(strings.Trim(text, "\t "))
 			CONFIG_IgnoreGlobs = append(CONFIG_IgnoreGlobs, glob.MustCompile(strings.Trim(text, "\t ")))
 		}
 	}

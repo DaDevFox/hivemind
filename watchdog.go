@@ -1,15 +1,12 @@
 package main
 
 import (
-	"fmt"
-	// "io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/sirupsen/logrus"
 )
 
 var file_copy_mutex = sync.Mutex{}
@@ -17,6 +14,7 @@ var file_copy_mutex = sync.Mutex{}
 var BUFFER_SIZE = 2048
 
 // map of parent directories to sync; TODO: dedup over time
+// TODO: save to/read from workcache file next to core.hive
 var WorkCache_lock = sync.RWMutex{}
 
 var WorkCache map[string][]string
@@ -65,12 +63,13 @@ func watchdog_init() {
 		})
 
 		if err != nil {
-			logrus.Warn(err)
+			log.Warn(err)
 		}
 	}
 }
 
 func scan() {
+	log.Info("Performing scan")
 	if WorkCache == nil {
 		WorkCache_lock.Lock()
 		WorkCache = make(map[string][]string)
@@ -86,6 +85,7 @@ func scan() {
 			}
 
 			if fi.IsDir() && excludePattern.Match(relpath) {
+				log.Printf("Ignoring %s", relpath)
 				return filepath.SkipDir // Skip this directory
 			}
 		}
@@ -101,10 +101,10 @@ func scan() {
 
 	// perform full write/transfer operations
 
-	// fmt.Println("completed full directory sync")
+	log.Println("completed full directory sync")
 
 	if err != nil {
-		logrus.Fatal(err)
+		log.Fatal(err)
 	}
 }
 
@@ -137,11 +137,11 @@ func check(path string) error {
 		abs_path, err := filepath.Abs(path)
 		abs_core_dir, err := filepath.Abs(core_dir)
 		if err != nil {
-			logrus.Fatal(err)
+			log.Fatal(err)
 		}
 		outprop, err := SubElem(abs_core_dir, abs_path)
 		if err != nil {
-			logrus.Fatal(err)
+			log.Fatal(err)
 		}
 		for _, transaction_type := range matches {
 			if outprop {
@@ -171,11 +171,11 @@ func check(path string) error {
 					continue
 				}
 
-				fmt.Printf("located %s mapping to %s; checking\n", path, *untransformed_filename)
+				log.Printf("located %s mapping to %s; checking\n", path, *untransformed_filename)
 
-				fmt.Printf("change detected: %s\n", *untransformed_filename)
+				log.Printf("change detected: %s\n", *untransformed_filename)
 
-				// fmt.Printf("%s updated!", filename)
+				//log.Printf("%s updated!", filename)
 
 				// DONE: from hashdb, find core path location of file with untransformed_filename
 				// TODO: figure out how to resolve nonunique file names
@@ -183,7 +183,7 @@ func check(path string) error {
 				core_filepaths, ok := HASHDB_file_table[*untransformed_filename]
 
 				if !ok {
-					fmt.Println("error file changed and mapped to core dir file; file does not exist in core dir")
+					log.Println("error file changed and mapped to core dir file; file does not exist in core dir")
 					continue
 				}
 
@@ -194,7 +194,7 @@ func check(path string) error {
 				core_filepath_parent := filepath.Dir(core_filepaths.TopK(1)[0])
 				FileTable_lock.Unlock()
 
-				fmt.Printf("adding to transferqueue: %s\n", *untransformed_filename)
+				log.Printf("adding to transferqueue: %s\n", *untransformed_filename)
 				TransferQueue <- struct {
 					dest string
 					src  string
@@ -204,7 +204,7 @@ func check(path string) error {
 				}
 
 				WorkCache_lock.Lock()
-				fmt.Printf("Adding %s/* <-> %s/* to workcache\n", filepath.Dir(path), core_filepath_parent)
+				log.Printf("Adding %s/* <-> %s/* to workcache\n", filepath.Dir(path), core_filepath_parent)
 				_, ok = WorkCache[core_filepath_parent]
 				if !ok {
 					WorkCache[core_filepath_parent] = make([]string, 0)
@@ -218,7 +218,6 @@ func check(path string) error {
 
 	}
 
-	interface_update()
 	return nil
 }
 
@@ -230,11 +229,11 @@ func transfer(event struct {
 	dest string
 	src  string
 }) error {
-	fmt.Printf("Transferring %s\n", event.src)
+	log.Printf("Transferring %s\n", event.src)
 	// TODO: recovery flag + backup for contents of file prior to overwrite
 	err := copyFileThreadSafe(event.src, event.dest, &file_copy_mutex)
 	if err != nil {
-		fmt.Printf("ERR: %s", err)
+		log.Printf("ERR: %s", err)
 	}
 
 	OutpropQueue <- struct {
@@ -250,7 +249,7 @@ func transfer(event struct {
 
 func transfer_serve() {
 	for s := range TransferQueue {
-		fmt.Printf("serving %s\n", s.dest)
+		log.Printf("serving %s\n", s.dest)
 		go transfer(s)
 	}
 }
@@ -259,17 +258,17 @@ func outpropogate(event struct {
 	dest_filename string
 	src           string
 }) error {
-	fmt.Printf("Outpropogating %s\n", event.dest_filename)
+	log.Printf("Outpropogating %s\n", event.dest_filename)
 	parent := filepath.Dir(event.src)
 	WorkCache_lock.RLock()
 	for _, mapping := range WorkCache[parent] {
-		fmt.Printf("2; Outpropogating %s\n", event.dest_filename)
+		log.Printf("2; Outpropogating %s\n", event.dest_filename)
 		other_path := filepath.Join(mapping, event.dest_filename)
-		fmt.Println(other_path)
+		log.Println(other_path)
 
 		err := copyFileThreadSafe(event.src, other_path, &file_copy_mutex)
 		if err != nil {
-			fmt.Printf("ERR: %s", err)
+			log.Printf("ERR: %s", err)
 		}
 	}
 

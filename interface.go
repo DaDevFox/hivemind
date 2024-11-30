@@ -4,10 +4,15 @@ import (
 	// "encoding/json"
 
 	// "github.com/davecgh/go-spew/spew"
+	// "io"
 	"path/filepath"
 
 	"github.com/pterm/pterm"
+	"github.com/pterm/pterm/putils"
+	// "github.com/pterm/pterm/putils"
 )
+
+var logger *pterm.Logger
 
 var DEBUG_info bool = true
 var area *pterm.AreaPrinter
@@ -18,14 +23,21 @@ var WORKING_source_dirs []string
 func interface_init() {
 	// Initialize a new PTerm area with fullscreen and center options
 	// The Start() function returns the created area and an error (ignored here)
-	a, _ := pterm.DefaultArea.WithRemoveWhenDone().Start()
-	area = a
+	area, _ = pterm.DefaultArea.WithCenter().Start()
+	logger = &pterm.DefaultLogger
+
+	logo, _ := pterm.DefaultBigText.WithLetters(
+		putils.LettersFromStringWithStyle("Hive", pterm.NewStyle(pterm.FgYellow)),
+		putils.LettersFromStringWithStyle("Mind", pterm.NewStyle(pterm.FgBlack))).
+		Srender()
+
+	pterm.DefaultCenter.Print(logo)
 }
+
+var count = 0
 
 func interface_update() {
 	res := ""
-	// res += pterm.Info.Sprintfln("Updating\n")
-
 	for dir := range CONFIG_SourceDirs {
 		panel := pterm.DefaultBox.WithTitleTopCenter(true).WithTitle(dir)
 
@@ -62,7 +74,8 @@ func interface_update() {
 		// res += pterm.DefaultBox.WithTitleTopCenter(true).WithTitle("hashes").Sprint(json.Marshal(HASHDB_hash_table))
 	}
 
-	// area.Update(res)
+	area.Update(res)
+	count += 1
 }
 
 func interface_cleanup() {

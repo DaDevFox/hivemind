@@ -1,6 +1,7 @@
-/home/mehul/Documents/hivemind/core/
+D:\LIB Library\HV Hivemind
   %s -> %s_c
 
 IGNORE:
-  .git/*
-  .github/*
+  \.git
+  \.github
+  *~

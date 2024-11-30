@@ -3,7 +3,7 @@ package main
 import (
 	"crypto/md5"
 	"encoding/hex"
-	"fmt"
+
 	// "hash"
 	"io"
 	"os"
@@ -33,11 +33,12 @@ func hashdb_diff(path string, update bool) bool {
 	stored, exists := HASHDB_hash_table[path]
 	newhash, err := md5sum(path)
 	if err != nil {
-		fmt.Printf("ERR while hashing: %s\n", err)
+		log.Printf("ERR while hashing: %s\n", err)
+		// test
 	}
 
 	if !exists {
-		fmt.Printf("detected new file: %s\n", path)
+		log.Printf("detected new file: %s\n", path)
 		if update {
 			HASHDB_hash_table[path] = newhash
 			hashdb_add_to_filetable(path)
