@@ -27,6 +27,10 @@ var OutpropQueue chan struct {
 	src           string
 }
 
+func watchdog_cleanup() {
+	hashdb_cleanup()
+}
+
 func watchdog_init() {
 	hashdb_init()
 	TransferQueue = make(chan struct {
@@ -94,6 +98,7 @@ func scan() {
 			return nil
 		}
 
+		log.Printf("%s", path)
 		go check(path)
 
 		return nil
@@ -195,13 +200,17 @@ func check(path string) error {
 				FileTable_lock.Unlock()
 
 				log.Printf("adding to transferqueue: %s\n", *untransformed_filename)
+				destPath := filepath.Join(core_filepath_parent, *untransformed_filename)
 				TransferQueue <- struct {
 					dest string
 					src  string
 				}{
-					dest: filepath.Join(core_filepath_parent, *untransformed_filename),
+					dest: destPath,
 					src:  path,
 				}
+
+				WORKING_source_dirs = append(WORKING_source_dirs, path)
+				CHECKING_source_dirs = append(CHECKING_source_dirs, destPath)
 
 				WorkCache_lock.Lock()
 				log.Printf("Adding %s/* <-> %s/* to workcache\n", filepath.Dir(path), core_filepath_parent)

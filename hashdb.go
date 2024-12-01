@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v4/options"
 	"github.com/hashicorp/go-set/v3"
 )
 
@@ -75,11 +76,18 @@ func hashdb_table_exists(path string) bool {
 
 func hashdb_load() {
 	// load hash table from file
-	dbPath := path.Join(RootDir, ".hive/store")
+	dbPath := path.Join(RootDir, ".hive")
 
 	log.Info(dbPath)
 	var err error = nil
-	HASHDB_hash_table, err = badger.Open(badger.DefaultOptions(dbPath))
+	HASHDB_hash_table, err = badger.Open(badger.DefaultOptions(dbPath).
+		// prepare a default of 10MB pre-allocated storage
+		WithValueLogFileSize(10 << 20).
+		// store 16-bytes (128 bits) for md5 hashes as values
+		WithValueThreshold(16).
+		// and compress
+		WithCompression(options.ZSTD).
+		WithZSTDCompressionLevel(3))
 	if err != nil {
 		log.Fatal("unable to open badger database")
 	}
