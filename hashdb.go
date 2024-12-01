@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"path"
 
 	// "hash"
 	"io"
@@ -10,50 +11,112 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/dgraph-io/badger/v4"
 	"github.com/hashicorp/go-set/v3"
 )
 
-var HashTable_lock = sync.RWMutex{}
+// var HashTable_lock = sync.RWMutex{}
 var FileTable_lock = sync.RWMutex{}
 
-// path to hash
-var HASHDB_hash_table map[string]string
+// stores path to hash (unique) relation
+var HASHDB_hash_table *badger.DB
 
-// filename to path(s)
+// stores filename to path(s) (nonunique/not O(1)) relation
 var HASHDB_file_table map[string](*set.TreeSet[string])
 
 func hashdb_init() {
 	// h = md5.New()
-	HASHDB_hash_table = make(map[string]string)
+	hashdb_load()
+	// HASHDB_hash_table = make(map[string]string)
 	HASHDB_file_table = make(map[string](*set.TreeSet[string]))
 }
 
+// COPIES and returns value from hashdb hash table persistent store
+func hashdb_table_get(path string) string {
+	var value []byte = nil
+	HASHDB_hash_table.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(path))
+		if err != nil {
+			return err
+		}
+		item.Value(func(val []byte) error {
+			// This func with val would only be called if item.Value encounters no error.
+
+			// Copying or parsing val is valid.
+			value = make([]byte, len(val))
+			value = append(value, val...)
+
+			return nil
+		})
+
+		return nil
+	})
+	return string(value[:])
+}
+
+func hashdb_table_set(path string, value string) error {
+	return HASHDB_hash_table.Update(func(txn *badger.Txn) error {
+		e := badger.NewEntry([]byte(path), []byte(value))
+		err := txn.SetEntry(e)
+		return err
+	})
+}
+
+func hashdb_table_exists(path string) bool {
+	exists := false
+	HASHDB_hash_table.View(func(txn *badger.Txn) error {
+		_, err := txn.Get([]byte(path))
+		exists = err != badger.ErrKeyNotFound
+
+		return nil
+	})
+	return exists
+}
+
+func hashdb_load() {
+	// load hash table from file
+	dbPath := path.Join(RootDir, ".hive/store")
+
+	log.Info(dbPath)
+	var err error = nil
+	HASHDB_hash_table, err = badger.Open(badger.DefaultOptions(dbPath))
+	if err != nil {
+		log.Fatal("unable to open badger database")
+	}
+
+	// load hash table entries into file table
+
+}
+
 func hashdb_diff(path string, update bool) bool {
-	HashTable_lock.Lock()
-	stored, exists := HASHDB_hash_table[path]
+	// HashTable_lock.Lock()
+	exists := hashdb_table_exists(path)
+
+	stored := hashdb_table_get(path)
 	newhash, err := md5sum(path)
 	if err != nil {
 		log.Printf("ERR while hashing: %s\n", err)
 		// test
+		// return false
 	}
 
 	if !exists {
 		log.Printf("detected new file: %s\n", path)
 		if update {
-			HASHDB_hash_table[path] = newhash
+			hashdb_table_set(path, newhash)
 			hashdb_add_to_filetable(path)
 		}
-		HashTable_lock.Unlock()
+		// HashTable_lock.Unlock()
 		return true
 	}
-	HashTable_lock.Unlock()
+	// HashTable_lock.Unlock()
 
 	if update {
 
-		HashTable_lock.Lock()
-		HASHDB_hash_table[path] = newhash
+		// HashTable_lock.Lock()
+		hashdb_table_set(path, newhash)
 		hashdb_add_to_filetable(path)
-		HashTable_lock.Unlock()
+		// HashTable_lock.Unlock()
 	}
 
 	return newhash != stored
@@ -87,7 +150,7 @@ func hashdb_update(path string) error {
 	if err != nil {
 		return err
 	}
-	HASHDB_hash_table[path] = hash
+	hashdb_table_set(path, hash)
 	hashdb_add_to_filetable(path)
 	return nil
 }
@@ -104,4 +167,8 @@ func md5sum(filePath string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func hashdb_cleanup() {
+	HASHDB_hash_table.Close()
 }
