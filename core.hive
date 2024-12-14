@@ -4,4 +4,5 @@ D:\LIB Library\HV Hivemind
 IGNORE:
   \.git
   \.github
-  *~
+  \.hive
+  .*~

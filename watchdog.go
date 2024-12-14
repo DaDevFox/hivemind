@@ -98,7 +98,7 @@ func scan() {
 			return nil
 		}
 
-		log.Printf("%s", path)
+		// log.Printf("%s", path)
 		go check(path)
 
 		return nil
@@ -158,6 +158,8 @@ func check(path string) error {
 				// if !changed(path) {
 				// 	continue
 				// }
+				//
+				// log.Printf("outpropping %s", path)
 
 				// representational path stored, NOT actual
 				OutpropQueue <- struct {
@@ -260,17 +262,12 @@ func transfer(event struct {
 		src:           event.dest,
 	}
 
-	CHECKING_queue <- CheckupEvent{
-		path:  event.src,
-		added: true,
-	}
-
 	return nil
 }
 
 func transfer_serve() {
 	for s := range TransferQueue {
-		log.Printf("serving %s\n", s.dest)
+		// log.Printf("serving %s\n", s.dest)
 		go transfer(s)
 	}
 }

@@ -7,7 +7,9 @@ import (
 	// "io"
 	// "encoding/json"
 	"os"
+	"path"
 	"path/filepath"
+	"sync"
 
 	// "github.com/dgraph-io/badger/v4"
 	"github.com/hashicorp/go-set/v3"
@@ -26,12 +28,19 @@ type CheckupEvent struct {
 	added bool
 }
 
+var updateMutex = sync.Mutex{}
+
 var CHECKING_queue chan CheckupEvent
 var WORKING_queue chan CheckupEvent
 var CHECKING_source_dirs *set.TreeSet[string]
 var WORKING_source_dirs *set.TreeSet[string]
 
 func interface_init() {
+	updateMutex.Lock()
+	defer updateMutex.Unlock()
+	CHECKING_queue = make(chan CheckupEvent, 2*BUFFER_SIZE)
+	WORKING_queue = make(chan CheckupEvent, 2*BUFFER_SIZE)
+
 	CHECKING_source_dirs = set.NewTreeSet(func(s1, s2 string) int {
 		if s1 > s2 {
 			return 1
@@ -56,6 +65,8 @@ func interface_init() {
 		Srender()
 
 	pterm.DefaultCenter.Print(logo)
+
+	interface_serve()
 }
 
 var count = 0
@@ -67,6 +78,7 @@ func interface_serve() {
 
 func interface_checking_serve() {
 	for event := range CHECKING_queue {
+		updateMutex.Lock()
 		if event.added {
 			CHECKING_source_dirs.Insert(event.path)
 		} else {
@@ -74,11 +86,13 @@ func interface_checking_serve() {
 		}
 		log.Info("CHECKING (%t) %s", event.added, event.path)
 		interface_update()
+		updateMutex.Unlock()
 	}
 }
 
 func interface_working_serve() {
 	for event := range WORKING_queue {
+		updateMutex.Lock()
 		if event.added {
 			WORKING_source_dirs.Insert(event.path)
 		} else {
@@ -86,6 +100,7 @@ func interface_working_serve() {
 		}
 		log.Info("WORKING (%t) %s", event.added, event.path)
 		interface_update()
+		updateMutex.Unlock()
 	}
 }
 
@@ -133,41 +148,65 @@ func interface_update() {
 	hashedWorkingStyle := pterm.NewStyle(pterm.BgYellow, pterm.FgWhite)
 	hashedCheckingStyle := pterm.NewStyle(pterm.BgWhite, pterm.FgBlack)
 
-	subitems, err := os.ReadDir(RootDir)
-	if err != nil {
-		log.Fatal("couldn't read subdirs of RootDir")
-	}
-
 	tree := pterm.TreeNode{
 		Text: RootDir,
 	}
 
-	queue := make(chan *pterm.TreeNode, 2*BUFFER_SIZE)
-	for _, v := range subitems {
-		newNode := pterm.TreeNode{
-			Text: v.Name(),
-		}
-		queue <- &newNode
-		tree.Children = append(tree.Children, newNode)
-	}
-
+	queue := make(chan struct {
+		*pterm.TreeNode
+		string
+	}, 2*BUFFER_SIZE)
+	queue <- struct {
+		*pterm.TreeNode
+		string
+	}{&tree, RootDir}
 	for len(queue) > 0 {
 		item := <-queue
+
+		itempath := item.string
+		node := item.TreeNode
+
+		// check display mods necessary for item
 		working := false
 		checking := false
 		for checkingWorkItem := range WORKING_source_dirs.Items() {
-			subelem, err := SubElem(item.Text, checkingWorkItem)
+			subelem, err := SubElem(itempath, checkingWorkItem)
 			if err != nil {
-				log.Fatal("rendering error")
+				log.Printf("rendering error: %s", err.Error())
 			}
 			working = working || subelem
 		}
 		for checkingCheckingItem := range WORKING_source_dirs.Items() {
-			subelem, err := SubElem(item.Text, checkingCheckingItem)
+			subelem, err := SubElem(itempath, checkingCheckingItem)
 			if err != nil {
-				log.Fatal("rendering error")
+				log.Printf("rendering error: %s", err.Error())
 			}
 			checking = checking || subelem
+		}
+
+		// stat file -- don't render if unable to
+		fi, err := os.Stat(itempath)
+		if err != nil {
+			log.Warnf("Couldn't stat path %s", itempath)
+			continue
+		}
+
+		if fi.IsDir() && (working || checking || itempath == RootDir) {
+			subitems, err := os.ReadDir(itempath)
+			if err != nil {
+				log.Fatalf("Error reading directory %s", itempath)
+			}
+
+			for _, v := range subitems {
+				newNode := pterm.TreeNode{
+					Text: v.Name(),
+				}
+				queue <- struct {
+					*pterm.TreeNode
+					string
+				}{&newNode, path.Join(itempath, v.Name())}
+				node.Children = append(node.Children, newNode)
+			}
 		}
 
 		if working {
@@ -181,7 +220,7 @@ func interface_update() {
 
 	stree, err := pterm.DefaultTree.WithRoot(tree).Srender()
 	if err != nil {
-		log.Fatal("rendering error")
+		log.Printf("rendering error: %s", err.Error())
 	}
 
 	// pterm.DefaultTree.WithRoot(tree).Render()
