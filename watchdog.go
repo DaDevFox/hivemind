@@ -128,7 +128,6 @@ func SubElem(parent, sub string) (bool, error) {
 }
 
 func check(path string) error {
-	// DONE: hook up to hash db; return file hash changed or is different from other
 	changed := func(file string) bool {
 		return hashdb_diff(file, true)
 	}
@@ -209,9 +208,6 @@ func check(path string) error {
 					src:  path,
 				}
 
-				WORKING_source_dirs = append(WORKING_source_dirs, path)
-				CHECKING_source_dirs = append(CHECKING_source_dirs, destPath)
-
 				WorkCache_lock.Lock()
 				log.Printf("Adding %s/* <-> %s/* to workcache\n", filepath.Dir(path), core_filepath_parent)
 				_, ok = WorkCache[core_filepath_parent]
@@ -238,6 +234,17 @@ func transfer(event struct {
 	dest string
 	src  string
 }) error {
+	CHECKING_queue <- CheckupEvent{
+		path:  event.src,
+		added: true,
+	}
+	defer func() {
+		CHECKING_queue <- CheckupEvent{
+			path:  event.src,
+			added: false,
+		}
+	}()
+
 	log.Printf("Transferring %s\n", event.src)
 	// TODO: recovery flag + backup for contents of file prior to overwrite
 	err := copyFileThreadSafe(event.src, event.dest, &file_copy_mutex)
@@ -251,6 +258,11 @@ func transfer(event struct {
 	}{
 		dest_filename: filepath.Base(event.src), // TODO: expand across match patterns for outprop requests
 		src:           event.dest,
+	}
+
+	CHECKING_queue <- CheckupEvent{
+		path:  event.src,
+		added: true,
 	}
 
 	return nil
@@ -267,6 +279,17 @@ func outpropogate(event struct {
 	dest_filename string
 	src           string
 }) error {
+	WORKING_queue <- CheckupEvent{
+		path:  event.src,
+		added: true,
+	}
+	defer func() {
+		WORKING_queue <- CheckupEvent{
+			path:  event.src,
+			added: false,
+		}
+	}()
+
 	log.Printf("Outpropogating %s\n", event.dest_filename)
 	parent := filepath.Dir(event.src)
 	WorkCache_lock.RLock()

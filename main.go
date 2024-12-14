@@ -202,9 +202,9 @@ func main() {
 			// watch for events
 			//
 			case event := <-watcher.Events:
-				// fmt.Printf("EVENT! %#v\n", event)
+				log.Info("EVENT! %#v\n", event)
 				go watchdog_process(event)
-				interface_update()
+				// interface_update()
 
 				// watch for errors
 			case err := <-watcher.Errors:

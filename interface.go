@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	// "github.com/dgraph-io/badger/v4"
+	"github.com/hashicorp/go-set/v3"
 	"github.com/pterm/pterm"
 	"github.com/pterm/pterm/putils"
 	// "github.com/pterm/pterm/putils"
@@ -20,10 +21,30 @@ var logger *pterm.Logger
 var DEBUG_info bool = true
 var area *pterm.AreaPrinter
 
-var CHECKING_source_dirs []string
-var WORKING_source_dirs []string
+type CheckupEvent struct {
+	path  string
+	added bool
+}
+
+var CHECKING_queue chan CheckupEvent
+var WORKING_queue chan CheckupEvent
+var CHECKING_source_dirs *set.TreeSet[string]
+var WORKING_source_dirs *set.TreeSet[string]
 
 func interface_init() {
+	CHECKING_source_dirs = set.NewTreeSet(func(s1, s2 string) int {
+		if s1 > s2 {
+			return 1
+		}
+		return -1
+	})
+	WORKING_source_dirs = set.NewTreeSet(func(s1, s2 string) int {
+		if s1 > s2 {
+			return 1
+		}
+		return -1
+	})
+
 	// Initialize a new PTerm area with fullscreen and center options
 	// The Start() function returns the created area and an error (ignored here)
 	area, _ = pterm.DefaultArea.WithCenter().Start()
@@ -38,6 +59,35 @@ func interface_init() {
 }
 
 var count = 0
+
+func interface_serve() {
+	go interface_checking_serve()
+	go interface_working_serve()
+}
+
+func interface_checking_serve() {
+	for event := range CHECKING_queue {
+		if event.added {
+			CHECKING_source_dirs.Insert(event.path)
+		} else {
+			CHECKING_source_dirs.Remove(event.path)
+		}
+		log.Info("CHECKING (%t) %s", event.added, event.path)
+		interface_update()
+	}
+}
+
+func interface_working_serve() {
+	for event := range WORKING_queue {
+		if event.added {
+			WORKING_source_dirs.Insert(event.path)
+		} else {
+			WORKING_source_dirs.Remove(event.path)
+		}
+		log.Info("WORKING (%t) %s", event.added, event.path)
+		interface_update()
+	}
+}
 
 func interface_update() {
 	res := ""
@@ -105,14 +155,14 @@ func interface_update() {
 		item := <-queue
 		working := false
 		checking := false
-		for _, checkingWorkItem := range WORKING_source_dirs {
+		for checkingWorkItem := range WORKING_source_dirs.Items() {
 			subelem, err := SubElem(item.Text, checkingWorkItem)
 			if err != nil {
 				log.Fatal("rendering error")
 			}
 			working = working || subelem
 		}
-		for _, checkingCheckingItem := range WORKING_source_dirs {
+		for checkingCheckingItem := range WORKING_source_dirs.Items() {
 			subelem, err := SubElem(item.Text, checkingCheckingItem)
 			if err != nil {
 				log.Fatal("rendering error")
@@ -121,9 +171,9 @@ func interface_update() {
 		}
 
 		if working {
-			item.Text = hashedWorkingStyle.Sprint(item.Text)
+			item.Text = hashedWorkingStyle.Sprintf("* %s", item.Text)
 		} else if checking {
-			item.Text = hashedCheckingStyle.Sprint(item.Text)
+			item.Text = hashedCheckingStyle.Sprintf("+ %s", item.Text)
 		} else {
 			item.Text = hashedMatchingStyle.Sprint(item.Text)
 		}
