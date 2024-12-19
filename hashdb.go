@@ -148,6 +148,7 @@ func hashdb_add_to_filetable(path string) {
 
 			return 0
 		})
+
 	}
 	HASHDB_file_table[filename].Insert(path)
 

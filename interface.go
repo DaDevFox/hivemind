@@ -1,21 +1,14 @@
 package main
 
 import (
-	// "encoding/json"
-
-	// "github.com/davecgh/go-spew/spew"
-	// "io"
-	// "encoding/json"
 	"os"
 	"path"
 	"path/filepath"
 	"sync"
 
-	// "github.com/dgraph-io/badger/v4"
 	"github.com/hashicorp/go-set/v3"
 	"github.com/pterm/pterm"
 	"github.com/pterm/pterm/putils"
-	// "github.com/pterm/pterm/putils"
 )
 
 var logger *pterm.Logger
@@ -84,7 +77,7 @@ func interface_checking_serve() {
 		} else {
 			CHECKING_source_dirs.Remove(event.path)
 		}
-		log.Info("CHECKING (%t) %s", event.added, event.path)
+		log.Infof("CHECKING (%t) %s", event.added, event.path)
 		interface_update()
 		updateMutex.Unlock()
 	}
@@ -98,7 +91,7 @@ func interface_working_serve() {
 		} else {
 			WORKING_source_dirs.Remove(event.path)
 		}
-		log.Info("WORKING (%t) %s", event.added, event.path)
+		log.Infof("WORKING (%t) %s", event.added, event.path)
 		interface_update()
 		updateMutex.Unlock()
 	}
@@ -154,17 +147,24 @@ func interface_update() {
 
 	queue := make(chan struct {
 		*pterm.TreeNode
+		int // child index (-1 for self)
 		string
 	}, 2*BUFFER_SIZE)
 	queue <- struct {
 		*pterm.TreeNode
+		int
 		string
-	}{&tree, RootDir}
+	}{&tree, -1, RootDir}
 	for len(queue) > 0 {
 		item := <-queue
 
 		itempath := item.string
-		node := item.TreeNode
+		var node *pterm.TreeNode
+		if item.int == -1 {
+			node = item.TreeNode
+		} else {
+			node = &item.TreeNode.Children[item.int]
+		}
 
 		// check display mods necessary for item
 		working := false
@@ -198,23 +198,24 @@ func interface_update() {
 			}
 
 			for _, v := range subitems {
-				newNode := pterm.TreeNode{
-					Text: v.Name(),
-				}
+				node.Children = append(node.Children, pterm.TreeNode{})
+				childNode := &node.Children[len(node.Children)-1]
+				childNode.Text = v.Name()
+				childNode.Children = make([]pterm.TreeNode, 0)
 				queue <- struct {
 					*pterm.TreeNode
+					int
 					string
-				}{&newNode, path.Join(itempath, v.Name())}
-				node.Children = append(node.Children, newNode)
+				}{node, len(node.Children) - 1, path.Join(itempath, v.Name())}
 			}
 		}
 
 		if working {
-			item.Text = hashedWorkingStyle.Sprintf("* %s", item.Text)
+			node.Text = hashedWorkingStyle.Sprintf("* %s", node.Text)
 		} else if checking {
-			item.Text = hashedCheckingStyle.Sprintf("+ %s", item.Text)
+			node.Text = hashedCheckingStyle.Sprintf("+ %s", node.Text)
 		} else {
-			item.Text = hashedMatchingStyle.Sprint(item.Text)
+			node.Text = hashedMatchingStyle.Sprint(node.Text)
 		}
 	}
 

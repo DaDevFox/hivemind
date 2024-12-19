@@ -181,7 +181,7 @@ func main() {
 	fmt.Printf("Initial scan complete\n")
 
 	// (one time update)
-	interface_update()
+	// interface_update()
 
 	// creates a new file watcher
 	fmt.Printf("Watching root directory (%s)", RootDir)
